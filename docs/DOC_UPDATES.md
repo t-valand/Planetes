@@ -94,3 +94,4 @@ Every time a doc changes, add a line here and post in the team group.
 | VALIDATION | V9 passed (at most 1 fake mover per field over 100 date shuffles; ε Indi B caught with the real dates) |
 | 08-Demo-Pitch-Submission | Demo video section rewritten to the official 30 s rule with a script that matches the live site (tour, blink, ε Indi B spectrum, Validation); 2-minute cut removed |
 | AI_USAGE | Row for the asteroid figure and homepage section |
+| SUBMISSION | Gaia DR3 link now points to IRSA's copy, which the code queries (was the MAST page) |
