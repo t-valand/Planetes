@@ -232,3 +232,20 @@
   .ed-dets { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pf-read { right: auto; left: 0; bottom: 1rem; }
 }
+
+/* 05 · A real mover (asteroid blink) */
+.ed-ast { display: grid; grid-template-columns: minmax(0, 28rem) minmax(0, 1fr); gap: 2rem; align-items: start; margin-top: 2rem; }
+.ed-ast-fig { min-width: 0; }
+.ed-ast-plate { position: relative; aspect-ratio: 1; background: var(--plate); overflow: hidden; }
+.ed-ast-plate img { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+.ed-ast-plate svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ed-ast-now, .ed-ast-was { fill: none; stroke: var(--accent-fill); stroke-width: 0.8; vector-effect: non-scaling-stroke; }
+.ed-ast-now { stroke-width: 2; }
+.ed-ast-was { stroke-dasharray: 3 3; opacity: 0.8; }
+.ed-ast-bar { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; font-size: 0.75rem; }
+.ed-ast-btns { display: flex; gap: 0.5rem; }
+.ed-ast-key { font-size: 0.6875rem; color: var(--ink-muted); margin: 0.5rem 0 0; }
+.ed-ast-k-now, .ed-ast-k-was { display: inline-block; width: 0.7em; height: 0.7em; border-radius: 50%; border: 2px solid var(--accent-fill); vertical-align: -0.05em; }
+.ed-ast-k-was { border-width: 1px; border-style: dashed; }
+@media (max-width: 760px) { .ed-ast { grid-template-columns: 1fr; } }
+.ed-ast a { color: var(--accent-text); }
