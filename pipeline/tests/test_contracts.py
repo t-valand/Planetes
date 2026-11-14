@@ -15,6 +15,7 @@ SCHEMA_FILES = sorted(CONTRACTS_DIR.glob("*.schema.json"))
 
 # Every top-level shape required by docs/03 §3-§5, plus the shared definitions file.
 EXPECTED = {
+    "asteroid_figure",
     "common",
     "error",
     "health",
