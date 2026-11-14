@@ -23,6 +23,7 @@ RULES: list[tuple[str, str]] = [
     ("targets/*/spectrum.json", "spectrum_result.schema.json"),
     ("targets/*/overlays.json", "overlays.schema.json"),
     ("targets/*/opinions.json", "opinions.schema.json"),
+    ("asteroid/asteroid.json", "asteroid_figure.schema.json"),
 ]
 
 

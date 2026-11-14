@@ -11,6 +11,26 @@ class PlanetesContracts(RootModel[Any]):
     root: Any = Field(..., title="PlanetesContracts")
 
 
+class AsteroidFrame(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    image: str
+    obs_id: str
+    release: str
+    utc: str
+    mjd: float
+    detector: int = Field(..., ge=1, le=6)
+    wavelength_um: float | None
+    jpl_xy: list[float] = Field(..., max_length=2, min_length=2)
+    """
+    0-based grid pixel, origin lower-left.
+    """
+    measured_xy: list[float] = Field(..., max_length=2, min_length=2)
+    offset_px: float = Field(..., ge=0.0)
+    peak_snr: float
+
+
 class Detector(RootModel[int]):
     root: int = Field(..., ge=1, le=6)
     """
@@ -340,6 +360,28 @@ class Verdict(BaseModel):
     )
     confidence: float | None = Field(..., ge=0.0, le=1.0)
     reasons: list[str]
+
+
+class AsteroidFigure(BaseModel):
+    """
+    Baked homepage figure: two real SPHEREx frames of a known asteroid with JPL SBIdent positions (pipeline/notebooks/asteroid_figure.py).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    schema_version: Literal["1.0"]
+    """
+    Contract version (docs/03 §1).
+    """
+    name: str
+    source: str
+    v_mag: float | None
+    grid_px: int = Field(..., ge=1)
+    pixel_arcsec: float = Field(..., gt=0.0)
+    hours_apart: float = Field(..., gt=0.0)
+    shift_arcsec: float = Field(..., ge=0.0)
+    frames: list[AsteroidFrame] = Field(..., max_length=2, min_length=2)
 
 
 class Error(BaseModel):

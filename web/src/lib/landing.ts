@@ -183,3 +183,32 @@ export function loadStarField(id: string): StarField | null {
   const radiusArcmin = Math.max(...stars.map((s) => Math.hypot(s.x, s.y)));
   return { stars, path, radiusArcmin };
 }
+
+/** Two real SPHEREx frames of a known asteroid with JPL positions (pipeline/notebooks/asteroid_figure.py). */
+export type AsteroidFigure = {
+  name: string;
+  grid_px: number;
+  pixel_arcsec: number;
+  hours_apart: number;
+  shift_arcsec: number;
+  frames: {
+    image: string;
+    obs_id: string;
+    utc: string;
+    detector: number;
+    wavelength_um: number | null;
+    jpl_xy: [number, number];
+    offset_px: number;
+    peak_snr: number;
+  }[];
+};
+
+export function loadAsteroid(): AsteroidFigure | null {
+  try {
+    const path = join(process.cwd(), "public", "data", "asteroid", "asteroid.json");
+    const fig = JSON.parse(readFileSync(path, "utf8")) as AsteroidFigure;
+    return fig.frames.length === 2 ? fig : null;
+  } catch {
+    return null;
+  }
+}

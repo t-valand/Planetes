@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { SiteNav } from "@/components/SiteNav";
+import { AsteroidBlink } from "@/components/landing/AsteroidBlink";
 import { Colour3D } from "@/components/landing/Colour3D";
 import { StarFieldFigure } from "@/components/landing/Figures3D";
 import { LegacyLinkRedirect } from "@/components/landing/LegacyLinkRedirect";
@@ -13,6 +14,7 @@ import {
   acrossDetectors,
   blinkPair,
   fmtDate,
+  loadAsteroid,
   loadOpinions,
   loadSpectrum,
   loadStarField,
@@ -40,6 +42,7 @@ const epsColours = eps ? acrossDetectors(eps) : [];
 const epsSpectrum = loadSpectrum("epsindib");
 const epsOpinions = loadOpinions("epsindib");
 const barnardField = loadStarField("barnard");
+const asteroid = loadAsteroid();
 const thumbs = BENCHMARKS.map((b) => ({ ...b, t: loadTarget(b.id) }));
 const p9 = evaluate(2.6 * EARTH_RADIUS_KM, 0.5, 700, 40, 1);
 const p9Best = p9.bands.reduce((a, b) => (b.ab < a.ab ? b : a));
@@ -221,9 +224,34 @@ export default function Home() {
         }
       />
 
-      {/* 6 · Benchmarks */}
+      {/* 6 · A real mover */}
+      {asteroid && (
+        <section className="ed-sec ed-wrap">
+          <Head n="05 — A real mover" title="Caught in the act, hours apart.">
+            <p className="ed-sub">
+              Two real SPHEREx exposures of the same patch of sky, taken {asteroid.hours_apart.toFixed(1)} hours apart.
+              The stars stay put. Asteroid {asteroid.name} jumps {asteroid.shift_arcsec.toFixed(0)}″, about{" "}
+              {(asteroid.shift_arcsec / asteroid.pixel_arcsec).toFixed(0)} pixels. JPL predicted where it would be in
+              each frame, and SPHEREx saw it there: within{" "}
+              {Math.max(...asteroid.frames.map((f) => f.offset_px)).toFixed(2)} pixels, at signal-to-noise{" "}
+              {Math.min(...asteroid.frames.map((f) => f.peak_snr)).toFixed(0)} or better.
+            </p>
+          </Head>
+          <div className="ed-ast">
+            <AsteroidBlink fig={asteroid} />
+            <p className="ed-op-h">
+              The two frames come from different detectors, so the colours differ slightly; compare positions, not
+              brightness. A distant Planet X would make the same kind of jump, only far smaller and over months. This
+              asteroid is one of 15 known asteroids we found at JPL&apos;s positions in SPHEREx frames (
+              <Link href="/validation">Validation, V6</Link>).
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* 7 · Benchmarks */}
       <section className="ed-sec ed-wrap">
-        <Head n="05 — Benchmarks" title="Five objects with known answers.">
+        <Head n="06 — Benchmarks" title="Five objects with known answers.">
           <p className="ed-sub">
             Before trusting Planetes on anything new, we test it on objects whose motion and type are already known.
           </p>
@@ -250,7 +278,7 @@ export default function Home() {
 
       {/* 7 · Honesty */}
       <section className="ed-sec ed-wrap">
-        <Head n="06 — Limits" title="What SPHEREx can't tell you here." />
+        <Head n="07 — Limits" title="What SPHEREx can't tell you here." />
         <ol className="ed-limits">
           <li>
             <strong>Bright stars saturate.</strong> Saturated points are shown, and never used in a verdict.
