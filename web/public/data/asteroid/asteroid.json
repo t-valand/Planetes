@@ -1,4 +1,5 @@
 {
+  "schema_version": "1.0",
   "name": "1562 Gondolatsch",
   "source": "SPHEREx (IRSA) frames; positions from JPL Small-Body Identification (SBIdent)",
   "v_mag": 16.5,

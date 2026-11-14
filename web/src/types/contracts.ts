@@ -1,6 +1,13 @@
 /* GENERATED, DO NOT EDIT. Source: contracts/*.schema.json. Regenerate with `make contracts`. */
 
 /**
+ * Contract version (docs/03 §1).
+ *
+ * This interface was referenced by `PlanetesContracts`'s JSON-Schema
+ * via the `definition` "SchemaVersion".
+ */
+export type SchemaVersion = "1.0";
+/**
  * Declination, ICRS, degrees.
  *
  * This interface was referenced by `PlanetesContracts`'s JSON-Schema
@@ -14,13 +21,6 @@ export type DecDeg = number;
  * via the `definition` "Detector".
  */
 export type Detector = number;
-/**
- * Contract version (docs/03 §1).
- *
- * This interface was referenced by `PlanetesContracts`'s JSON-Schema
- * via the `definition` "SchemaVersion".
- */
-export type SchemaVersion = "1.0";
 /**
  * SPHEREx release a measurement came from: Quick Releases QR2/QR3, or Data Release DR1 (at IRSA from Nov 2026; QR2 is no longer listed there).
  *
@@ -55,6 +55,54 @@ export type RequestedRelease = "auto" | "DR1" | "QR3" | "QR2";
 
 export interface PlanetesContracts {
   [k: string]: unknown;
+}
+/**
+ * Baked homepage figure: two real SPHEREx frames of a known asteroid with JPL SBIdent positions (pipeline/notebooks/asteroid_figure.py).
+ *
+ * This interface was referenced by `PlanetesContracts`'s JSON-Schema
+ * via the `definition` "AsteroidFigure".
+ */
+export interface AsteroidFigure {
+  schema_version: SchemaVersion;
+  name: string;
+  source: string;
+  v_mag: number | null;
+  grid_px: number;
+  pixel_arcsec: number;
+  hours_apart: number;
+  shift_arcsec: number;
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  frames: [AsteroidFrame, AsteroidFrame];
+}
+/**
+ * This interface was referenced by `PlanetesContracts`'s JSON-Schema
+ * via the `definition` "AsteroidFrame".
+ */
+export interface AsteroidFrame {
+  image: string;
+  obs_id: string;
+  release: string;
+  utc: string;
+  mjd: number;
+  detector: number;
+  wavelength_um: number | null;
+  /**
+   * 0-based grid pixel, origin lower-left.
+   *
+   * @minItems 2
+   * @maxItems 2
+   */
+  jpl_xy: [number, number];
+  /**
+   * @minItems 2
+   * @maxItems 2
+   */
+  measured_xy: [number, number];
+  offset_px: number;
+  peak_snr: number;
 }
 /**
  * Distance range. null = not measured.

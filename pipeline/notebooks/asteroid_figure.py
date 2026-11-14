@@ -128,6 +128,7 @@ def main() -> None:
     hours = (out_frames[1]["mjd"] - out_frames[0]["mjd"]) * 24
     shift = math.hypot(bx - ax, by - ay) * 6.2
     meta = {
+        "schema_version": "1.0",
         "name": NAME,
         "source": "SPHEREx (IRSA) frames; positions from JPL Small-Body Identification (SBIdent)",
         "v_mag": jpl[EXPOSURES[0]][2],
