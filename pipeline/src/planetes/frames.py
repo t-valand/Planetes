@@ -200,36 +200,57 @@ def mjd_to_utc(mjd: float) -> datetime:
     return datetime.fromtimestamp((mjd - 40587.0) * 86400.0, tz=UTC)
 
 
-def prepare_frame(
-    fits_bytes: bytes,
+def _resample_image_coords(data: np.ndarray, coords: np.ndarray, shape_out: tuple[int, int]) -> np.ndarray:
+    """Bilinear resample using precomputed (2, N) source pixel coordinates."""
+    out = map_coordinates(data.astype(np.float64), coords, order=1, mode="constant", cval=np.nan)
+    return out.reshape(shape_out)
+
+
+def _resample_flags_coords(
+    flags: np.ndarray, orig_x: np.ndarray, orig_y: np.ndarray, shape_out: tuple[int, int]
+) -> np.ndarray:
+    """Nearest-pixel integer FLAGS lookup using precomputed source coordinates."""
+    ix = np.rint(orig_x).astype(np.int64)
+    iy = np.rint(orig_y).astype(np.int64)
+    ny_in, nx_in = flags.shape
+    inside = (ix >= 0) & (ix < nx_in) & (iy >= 0) & (iy < ny_in)
+    out = np.full(shape_out, OUTSIDE, dtype=np.int64)
+    out[inside] = flags.astype(np.int64)[iy[inside], ix[inside]]
+    return out
+
+
+def _prepare_from_hdul(
+    hdul: fits.HDUList,
     frame_row: dict[str, Any],
     ref_wcs: WCS,
     grid_shape: tuple[int, int] = (64, 64),
     target_coord: tuple[float, float] | None = None,
-) -> PreparedFrame:
-    """Process one SPHEREx cutout: IMAGE - ZODI, wavelength, reprojection of image and flags, Frame object.
+) -> tuple[PreparedFrame, np.ndarray]:
+    """Shared FITS + WCS coordinate mapping step used by both prepare_frame and stack.prepare_frame_and_variance.
 
-    frame_row needs frame_id, obs_id, release, detector, mjd, epoch_group (from access.find_frames).
-    target_coord is the target's (ra, dec) at this frame's date (already propagated for proper motion).
+    Returns (PreparedFrame, precomputed_coords) so callers needing extra planes (e.g. VARIANCE) can
+    resample them without recomputing the SIP WCS inverse mapping.
     """
     _require_row(frame_row)
-    with fits.open(io.BytesIO(fits_bytes)) as hdul:
-        header = hdul["IMAGE"].header
-        image = hdul["IMAGE"].data.astype(np.float64) - hdul["ZODI"].data.astype(np.float64)
-        flags = np.asarray(hdul["FLAGS"].data)
-        bits = flag_bits(hdul["FLAGS"].header)
-        descriptions = flag_descriptions(hdul["FLAGS"].header)
-        wavelength_um, bandwidth_um = extract_wavelength(hdul)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=FITSFixedWarning)
-            input_wcs = WCS(header)
+    header = hdul["IMAGE"].header
+    image = hdul["IMAGE"].data.astype(np.float64) - hdul["ZODI"].data.astype(np.float64)
+    flags = np.asarray(hdul["FLAGS"].data, dtype=np.int64)
+    bits = flag_bits(hdul["FLAGS"].header)
+    descriptions = flag_descriptions(hdul["FLAGS"].header)
+    wavelength_um, bandwidth_um = extract_wavelength(hdul)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=FITSFixedWarning)
+        input_wcs = WCS(header)
 
-    reproj_image = reproject_to_grid(image, input_wcs, ref_wcs, grid_shape)
-    masks = classify_flags(reproject_flags(flags, input_wcs, ref_wcs, grid_shape), bits)
+    orig_x, orig_y = _source_coords(input_wcs, ref_wcs, grid_shape)
+    coords = np.array([orig_y.ravel(), orig_x.ravel()])
+
+    reproj_image = _resample_image_coords(image, coords, grid_shape)
+    masks = classify_flags(_resample_flags_coords(flags, orig_x, orig_y, grid_shape), bits)
     # Bilinear resampling spreads each saturated no-value pixel to its neighbours; resample the raw saturation
     # mask the same way so every output pixel it touched is marked saturated too.
-    sat_raw = classify_flags(flags.astype(np.int64), bits).saturated.astype(np.float64)
-    masks.saturated |= reproject_to_grid(sat_raw, input_wcs, ref_wcs, grid_shape) > 0
+    sat_raw = classify_flags(flags, bits).saturated.astype(np.float64)
+    masks.saturated |= _resample_image_coords(sat_raw, coords, grid_shape) > 0
 
     covered = ~masks.outside
     n_covered = int(covered.sum())
@@ -273,4 +294,22 @@ def prepare_frame(
         target_xy=target_xy,
         notes=notes,
     )
-    return PreparedFrame(frame=frame, image=reproj_image, masks=masks, bits=bits, descriptions=descriptions)
+    pf = PreparedFrame(frame=frame, image=reproj_image, masks=masks, bits=bits, descriptions=descriptions)
+    return pf, coords
+
+
+def prepare_frame(
+    fits_bytes: bytes,
+    frame_row: dict[str, Any],
+    ref_wcs: WCS,
+    grid_shape: tuple[int, int] = (64, 64),
+    target_coord: tuple[float, float] | None = None,
+) -> PreparedFrame:
+    """Process one SPHEREx cutout: IMAGE - ZODI, wavelength, reprojection of image and flags, Frame object.
+
+    frame_row needs frame_id, obs_id, release, detector, mjd, epoch_group (from access.find_frames).
+    target_coord is the target's (ra, dec) at this frame's date (already propagated for proper motion).
+    """
+    with fits.open(io.BytesIO(fits_bytes)) as hdul:
+        pf, _ = _prepare_from_hdul(hdul, frame_row, ref_wcs, grid_shape, target_coord=target_coord)
+    return pf

@@ -22,7 +22,6 @@ from astropy import log as astropy_log
 from astropy.io import fits
 from astropy.wcs import WCS, FITSFixedWarning
 from PIL import Image
-from scipy.ndimage import map_coordinates
 
 from planetes import frames, render
 
@@ -44,30 +43,13 @@ class CoaddResult:
     wavelength_um: float | None = None
 
 
-def _resample_with_coords(
-    data: np.ndarray,
-    coords: np.ndarray,
-    shape_out: tuple[int, int],
-) -> np.ndarray:
-    """Bilinear resample using precomputed (2, N) source pixel coordinates."""
-    out = map_coordinates(data.astype(np.float64), coords, order=1, mode="constant", cval=np.nan)
-    return out.reshape(shape_out)
-
-
-def _resample_flags_with_coords(
-    flags: np.ndarray,
-    orig_x: np.ndarray,
-    orig_y: np.ndarray,
-    shape_out: tuple[int, int],
-) -> np.ndarray:
-    """Nearest-pixel integer FLAGS lookup using precomputed source coordinates."""
-    ix = np.rint(orig_x).astype(np.int64)
-    iy = np.rint(orig_y).astype(np.int64)
-    ny_in, nx_in = flags.shape
-    inside = (ix >= 0) & (ix < nx_in) & (iy >= 0) & (iy < ny_in)
-    out = np.full(shape_out, frames.OUTSIDE, dtype=np.int64)
-    out[inside] = flags.astype(np.int64)[iy[inside], ix[inside]]
-    return out
+def _extract_raw_variance(hdul: fits.HDUList, zodi_sub_image: np.ndarray) -> np.ndarray:
+    """Read the VARIANCE plane or fall back to a MAD-based noise estimate."""
+    if "VARIANCE" in hdul and hdul["VARIANCE"].data is not None:
+        return hdul["VARIANCE"].data.astype(np.float64)
+    mad = float(np.nanmedian(np.abs(zodi_sub_image - np.nanmedian(zodi_sub_image))))
+    sig = (1.4826 * mad) or 1.0
+    return np.full_like(zodi_sub_image, sig**2)
 
 
 def prepare_frame_and_variance(
@@ -79,83 +61,16 @@ def prepare_frame_and_variance(
 ) -> tuple[frames.PreparedFrame, np.ndarray, np.ndarray]:
     """Single-pass FITS + WCS reprojection returning (PreparedFrame, reprojected_variance, good_mask).
 
-    Computes the SIP WCS inverse mapping once per frame instead of 7 times across
-    prepare_frame + prepare_reprojected_variance.
+    Shares frames._prepare_from_hdul so the SIP WCS inverse mapping is computed once per frame
+    and reused to resample the variance plane.
     """
-    frames._require_row(frame_row)
     with fits.open(io.BytesIO(fits_bytes)) as hdul:
-        header = hdul["IMAGE"].header
-        image = hdul["IMAGE"].data.astype(np.float64) - hdul["ZODI"].data.astype(np.float64)
-        if "VARIANCE" in hdul and hdul["VARIANCE"].data is not None:
-            var_raw = hdul["VARIANCE"].data.astype(np.float64)
-        else:
-            mad = float(np.nanmedian(np.abs(image - np.nanmedian(image))))
-            sig = (1.4826 * mad) or 1.0
-            var_raw = np.full_like(image, sig**2)
+        pf, coords = frames._prepare_from_hdul(hdul, frame_row, ref_wcs, grid_shape, target_coord=target_coord)
+        zodi_sub = hdul["IMAGE"].data.astype(np.float64) - hdul["ZODI"].data.astype(np.float64)
+        var_raw = _extract_raw_variance(hdul, zodi_sub)
 
-        flags = np.asarray(hdul["FLAGS"].data, dtype=np.int64)
-        bits = frames.flag_bits(hdul["FLAGS"].header)
-        descriptions = frames.flag_descriptions(hdul["FLAGS"].header)
-        wavelength_um, bandwidth_um = frames.extract_wavelength(hdul)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=FITSFixedWarning)
-            input_wcs = WCS(header)
-
-    orig_x, orig_y = frames._source_coords(input_wcs, ref_wcs, grid_shape)
-    coords = np.array([orig_y.ravel(), orig_x.ravel()])
-
-    reproj_img = _resample_with_coords(image, coords, grid_shape)
-    reproj_var = _resample_with_coords(var_raw, coords, grid_shape)
-    reproj_flags = _resample_flags_with_coords(flags, orig_x, orig_y, grid_shape)
-    masks = frames.classify_flags(reproj_flags, bits)
-
-    sat_raw = frames.classify_flags(flags, bits).saturated.astype(np.float64)
-    masks.saturated |= _resample_with_coords(sat_raw, coords, grid_shape) > 0
-
-    covered = ~masks.outside
-    n_covered = int(covered.sum())
-    bad = (masks.bad | ~np.isfinite(reproj_img)) & covered
-    flagged_frac = float(bad.sum() / n_covered) if n_covered else None
-
-    notes: list[str] = []
-    target_xy = None
-    saturated: bool | None = None
-    if target_coord is not None:
-        target_xy = frames.compute_target_xy(target_coord[0], target_coord[1], ref_wcs)
-        tx, ty = target_xy.root
-        yy, xx = np.indices(grid_shape)
-        near = (xx - tx) ** 2 + (yy - ty) ** 2 <= frames.SATURATION_RADIUS_PX**2
-        if near.any() and covered[near].any():
-            saturated = bool(masks.saturated[near].any())
-        else:
-            notes.append("Target is outside this exposure")
-    if wavelength_um is None:
-        notes.append("Wavelength could not be read from the spectral WCS")
-
-    fid = frame_row["frame_id"]
-    obs_id = str(frame_row["obs_id"])
-    mjd = float(frame_row["mjd"])
-    frame = frames.Frame(
-        id=fid,
-        kind="exposure",
-        obs_id=obs_id,
-        members=[obs_id],
-        release=str(frame_row["release"]),
-        epoch_index=int(frame_row["epoch_group"]),
-        mjd=mjd,
-        utc=frames.mjd_to_utc(mjd),
-        detector=frames.Detector(int(frame_row["detector"])),
-        wavelength_um=wavelength_um,
-        bandwidth_um=bandwidth_um,
-        image_url=f"/api/frames/{fid}.webp",
-        flags_url=f"/api/frames/{fid}/flags.png",
-        flagged_frac=flagged_frac,
-        saturated_near_center=saturated,
-        target_xy=target_xy,
-        notes=notes,
-    )
-    pf = frames.PreparedFrame(frame=frame, image=reproj_img, masks=masks, bits=bits, descriptions=descriptions)
-    good = (~masks.outside) & (~masks.bad) & np.isfinite(reproj_img) & np.isfinite(reproj_var) & (reproj_var > 0.0)
+    reproj_var = frames._resample_image_coords(var_raw, coords, grid_shape)
+    good = (~pf.masks.outside) & (~pf.masks.bad) & np.isfinite(pf.image) & np.isfinite(reproj_var) & (reproj_var > 0.0)
     return pf, reproj_var, good
 
 
@@ -168,16 +83,9 @@ def prepare_reprojected_variance(
     with fits.open(io.BytesIO(fits_bytes)) as hdul:
         header = hdul["IMAGE"].header
         image = hdul["IMAGE"].data.astype(np.float64) - hdul["ZODI"].data.astype(np.float64)
-        if "VARIANCE" in hdul and hdul["VARIANCE"].data is not None:
-            var_raw = hdul["VARIANCE"].data.astype(np.float64)
-        else:
-            mad = float(np.nanmedian(np.abs(image - np.nanmedian(image))))
-            sig = (1.4826 * mad) or 1.0
-            var_raw = np.full_like(image, sig**2)
-
+        var_raw = _extract_raw_variance(hdul, image)
         flags = np.asarray(hdul["FLAGS"].data, dtype=np.int64)
         bits = frames.flag_bits(hdul["FLAGS"].header)
-
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=FITSFixedWarning)
             input_wcs = WCS(header)
@@ -185,13 +93,13 @@ def prepare_reprojected_variance(
     orig_x, orig_y = frames._source_coords(input_wcs, ref_wcs, grid_shape)
     coords = np.array([orig_y.ravel(), orig_x.ravel()])
 
-    reproj_img = _resample_with_coords(image, coords, grid_shape)
-    reproj_var = _resample_with_coords(var_raw, coords, grid_shape)
-    reproj_flags = _resample_flags_with_coords(flags, orig_x, orig_y, grid_shape)
+    reproj_img = frames._resample_image_coords(image, coords, grid_shape)
+    reproj_var = frames._resample_image_coords(var_raw, coords, grid_shape)
+    reproj_flags = frames._resample_flags_coords(flags, orig_x, orig_y, grid_shape)
     masks = frames.classify_flags(reproj_flags, bits)
 
     sat_raw = frames.classify_flags(flags, bits).saturated.astype(np.float64)
-    masks.saturated |= _resample_with_coords(sat_raw, coords, grid_shape) > 0
+    masks.saturated |= frames._resample_image_coords(sat_raw, coords, grid_shape) > 0
 
     good = (~masks.outside) & (~masks.bad) & np.isfinite(reproj_img) & np.isfinite(reproj_var) & (reproj_var > 0.0)
     return reproj_img, reproj_var, good

@@ -109,9 +109,12 @@ def run_timelapse(
         item: tuple[bytes, dict[str, Any], tuple[float, float]],
     ) -> tuple[frames.PreparedFrame, np.ndarray | None, np.ndarray | None]:
         blob, row_dict, t_coord = item
+        thread_wcs = ref_wcs.deepcopy()
         if req.mode != "exposures":
-            return stack.prepare_frame_and_variance(blob, row_dict, ref_wcs, (size_px, size_px), target_coord=t_coord)
-        pf = frames.prepare_frame(blob, row_dict, ref_wcs, (size_px, size_px), target_coord=t_coord)
+            return stack.prepare_frame_and_variance(
+                blob, row_dict, thread_wcs, (size_px, size_px), target_coord=t_coord
+            )
+        pf = frames.prepare_frame(blob, row_dict, thread_wcs, (size_px, size_px), target_coord=t_coord)
         return pf, None, None
 
     total = len(chosen)
